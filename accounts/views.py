@@ -2,9 +2,19 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_yasg.utils import swagger_auto_schema
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import *
-from .services import verify_code
+from .serializers import (
+    LoginSerializer,
+    PasswordChangeSerializer,
+    ProfileSerializer,
+    ProfileUpdateSerializer,
+    RegisterSerializer,
+    ResendCodeSerializer,
+    VerifyEmailSerializer,
+)
+from .services import create_and_send_verification_code, verify_code
 
 
 def token_response(user):
@@ -16,6 +26,9 @@ def token_response(user):
 
 
 class RegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(request_body=RegisterSerializer)
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -27,6 +40,9 @@ class RegisterView(APIView):
 
 
 class VerifyEmailView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(request_body=VerifyEmailSerializer)
     def post(self, request):
         serializer = VerifyEmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -54,6 +70,9 @@ class VerifyEmailView(APIView):
 
 
 class LoginView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(request_body=LoginSerializer)
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -77,13 +96,41 @@ class LoginView(APIView):
         )
 
 
+class ResendCodeView(APIView):
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(request_body=ResendCodeSerializer)
+    def post(self, request):
+        serializer = ResendCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+
+        user = get_user_model().objects.filter(email=email, is_active=False).first()
+        if not user:
+            return Response(
+                {"detail": "Foydalanuvchi topilmadi yoki email allaqachon tasdiqlangan."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        create_and_send_verification_code(user.email)
+        return Response(
+            {"detail": "Yangi tasdiqlash kodi emailingizga yuborildi."},
+            status=status.HTTP_200_OK,
+        )
+
+
 class ProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         user = request.user
-        serializer = RegisterSerializer(user)
+        serializer = ProfileSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class ProfileUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(request_body=ProfileUpdateSerializer)
     def patch(self, request):
         user = request.user
         serializer = ProfileUpdateSerializer(user, data=request.data, partial=True)
@@ -93,8 +140,11 @@ class ProfileUpdateView(APIView):
 
 
 class PasswordChangeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(request_body=PasswordChangeSerializer)
     def put(self, request):
-        serializer = PasswwordChangeSerializer(data=request.data)
+        serializer = PasswordChangeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = request.user
         old_password = serializer.validated_data["old_password"]
@@ -112,7 +162,6 @@ class PasswordChangeView(APIView):
             {"detail": "Parol muvaffaqiyatli o'zgartirildi."},
             status=status.HTTP_200_OK,
         )
-
 
 
 

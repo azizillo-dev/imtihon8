@@ -1,7 +1,9 @@
+from django.contrib.auth import password_validation
+from django.db import transaction
 from rest_framework import serializers
-
 from .models import User
 from .services import create_and_send_verification_code
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     confirm_password = serializers.CharField(write_only=True)
@@ -11,6 +13,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ['id', 'first_name', 'last_name', 'username', 'email', 'password', 'confirm_password']
         read_only_fields = ['id']
 
+    def validate_password(self, value):
+        password_validation.validate_password(value)
+        return value
+
     def validate(self, data):
         if data['password'] != data['confirm_password']:
             raise serializers.ValidationError("Parollar mos emas!")
@@ -18,10 +24,11 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('confirm_password')
-        user = User.objects.create_user(**validated_data)
-        user.is_active = False
-        user.save(update_fields=['is_active'])
-        create_and_send_verification_code(user.email)
+        with transaction.atomic():
+            user = User.objects.create_user(**validated_data)
+            user.is_active = False
+            user.save(update_fields=['is_active'])
+            create_and_send_verification_code(user.email)
         return user
 
 
@@ -31,9 +38,19 @@ class VerifyEmailSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=6)
 
 
+class ResendCodeSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'first_name', 'last_name', 'username', 'email']
 
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
@@ -43,14 +60,16 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
         read_only_fields = ['email']
 
 
-class PasswwordChangeSerializer(serializers.Serializer):
+class PasswordChangeSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True)
     confirm_new_password = serializers.CharField(write_only=True)
+
+    def validate_new_password(self, value):
+        password_validation.validate_password(value)
+        return value
 
     def validate(self, data):
         if data['new_password'] != data['confirm_new_password']:
             raise serializers.ValidationError("Yangi parollar mos emas!")
         return data
-
-    
